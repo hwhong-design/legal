@@ -1724,30 +1724,14 @@ async function sha256(str) {
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
-// ── 영구 스토리지 (Artifact Storage API / localStorage 폴백) ──
-const STORAGE_KEY = 'wishket_applications';
+// ── Google Sheets 연동 ──
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwkZvNQ9t8DyIp2gucBDuiu4903CL4Lfkg4CUzTQPfXqtUSnpMwCxo_c_Dob7h6YV13/exec';
 const SESSION_KEY = 'wishket_admin_session';
 
-// storage API 사용 가능 여부 확인
-const useStorageAPI = typeof window.storage !== 'undefined';
-
-async function getApplications() {
-  if (useStorageAPI) {
-    try {
-      const result = await window.storage.get(STORAGE_KEY);
-      return result ? JSON.parse(result.value) : [];
-    } catch { return []; }
-  } else {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
-    catch { return []; }
-  }
-}
-
+// Google Sheets에 데이터 저장
 async function saveApplication(data) {
-  const apps = await getApplications();
-  apps.push({
-    id: Date.now(),
-    createdAt: new Date().toISOString(),
+  const payload = {
+    createdAt:    new Date().toLocaleString('ko-KR'),
     debtorName:   data.debtorName   || '',
     debtorRRN:    data.debtorRRN    || '',
     debtorAddr:   data.debtorAddr   || '',
@@ -1756,15 +1740,31 @@ async function saveApplication(data) {
     visitorPhone: data.visitorPhone || '',
     caseNum:      data.caseNum      || '',
     courtName:    data.courtName    || '',
-  });
-  if (useStorageAPI) {
-    await window.storage.set(STORAGE_KEY, JSON.stringify(apps));
-  } else {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(apps));
+  };
+  try {
+    await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  } catch(err) {
+    console.warn('Google Sheets 저장 실패:', err);
   }
 }
 
-// generateForm 에서 호출 — 기존 showToast 바로 위에 삽입됨
+// 관리자 대시보드용 — Sheets에서 데이터 불러오기
+async function getApplications() {
+  try {
+    const res = await fetch(APPS_SCRIPT_URL + '?action=get');
+    const json = await res.json();
+    return json.data || [];
+  } catch {
+    return [];
+  }
+}
+
+// generateForm 에서 호출
 async function saveCurrentApplication() {
   const debtorName   = document.getElementById('debtorName')?.value.trim()   || '';
   const debtorRRN    = document.getElementById('debtorRRN')?.value.trim()    || '';
@@ -1866,26 +1866,11 @@ async function renderAdminTable() {
 }
 
 async function deleteRecord(id) {
-  if (!confirm('이 기록을 삭제하시겠습니까?')) return;
-  const apps = (await getApplications()).filter(a => a.id !== id);
-  if (useStorageAPI) {
-    await window.storage.set(STORAGE_KEY, JSON.stringify(apps));
-  } else {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(apps));
-  }
-  renderAdminTable();
-  showToast('삭제되었습니다.');
+  showToast('삭제는 Google Sheets에서 직접 해주세요.');
 }
 
 async function clearAllData() {
-  if (!confirm('모든 신청 이력을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) return;
-  if (useStorageAPI) {
-    await window.storage.delete(STORAGE_KEY);
-  } else {
-    localStorage.removeItem(STORAGE_KEY);
-  }
-  renderAdminTable();
-  showToast('전체 데이터가 삭제되었습니다.');
+  showToast('전체 삭제는 Google Sheets에서 직접 해주세요.');
 }
 
 async function exportCSV() {
