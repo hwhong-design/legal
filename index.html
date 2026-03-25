@@ -344,7 +344,6 @@
   }
   .admin-table {
     width:100%; border-collapse:collapse; font-size:0.8rem; margin-top:12px;
-    table-layout: auto;
   }
   .admin-table th {
     background:#1e3a5f; color:white; padding:9px 10px;
@@ -1716,21 +1715,23 @@ document.addEventListener('input', function(e) {
 });
 
 // ── 관리자 비밀번호 (SHA-256 해시로 저장) ──
-// 기본 비밀번호: 2018
-const ADMIN_PW_HASH = '152e69cf3c8e76c8d8b0aed924ddd1708e4c68624611af33d52c2c2814dd5df9';
+// 기본 비밀번호: wishket2024
+const ADMIN_PW_HASH = '4b9a7f50c0bb198c6f5414c5a8459f5d216d34ab521ea94c060ea35cac66f900';
 
 async function sha256(str) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
-// ── Google Sheets 연동 ──
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxrOA965-Vwv8QXGwHtEdpVqNr08AGMSjJDZ-bezBsdYcnhu0ktSywnMvMhdAQG_TGf/exec';
+// ── Google Sheets Apps Script 연동 ──
+// ★ 아래 URL을 본인의 Apps Script 배포 URL로 교체하세요 ★
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwgjmScapGxKKJmurN7OHXprBuB5OloRObMyQFc8NN_aGZlHteZW-PKN3q5Zqnccg6k/exec';
 const SESSION_KEY = 'wishket_admin_session';
 
-// Google Sheets에 데이터 저장
+// ── Google Sheets에 데이터 저장 (POST) ──
 async function saveApplication(data) {
   const payload = {
+    action:       'save',
     createdAt:    new Date().toLocaleString('ko-KR'),
     debtorName:   data.debtorName   || '',
     debtorRRN:    data.debtorRRN    || '',
@@ -1746,32 +1747,32 @@ async function saveApplication(data) {
       method: 'POST',
       mode: 'no-cors',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
-  } catch(err) {
+  } catch (err) {
     console.warn('Google Sheets 저장 실패:', err);
   }
 }
 
-// 관리자 대시보드용 — Sheets에서 데이터 불러오기
+// ── Google Sheets에서 데이터 불러오기 (GET) ──
 async function getApplications() {
   try {
-    const res = await fetch(APPS_SCRIPT_URL + '?action=get');
+    const res  = await fetch(APPS_SCRIPT_URL + '?action=get');
     const json = await res.json();
-    return json.data || [];
+    return Array.isArray(json.data) ? json.data : [];
   } catch {
     return [];
   }
 }
 
-// generateForm 에서 호출
+// ── 신청서 생성 시 호출 ──
 async function saveCurrentApplication() {
   const debtorName   = document.getElementById('debtorName')?.value.trim()   || '';
   const debtorRRN    = document.getElementById('debtorRRN')?.value.trim()    || '';
   const debtorAddr   = document.getElementById('debtorAddr')?.value.trim()   || '';
-  const visitorName  = document.getElementById('apName')?.value.trim()  || '';
-  const visitorRRN   = document.getElementById('apRRN')?.value.trim()   || '';
-  const visitorPhone = document.getElementById('apPhone')?.value.trim() || '';
+  const visitorName  = document.getElementById('apName')?.value.trim()       || '';
+  const visitorRRN   = document.getElementById('apRRN')?.value.trim()        || '';
+  const visitorPhone = document.getElementById('apPhone')?.value.trim()      || '';
   const caseNum      = document.getElementById('caseNum')?.value.trim()      || '';
   const courtName    = document.getElementById('courtName')?.value.trim()    || '';
   await saveApplication({ debtorName, debtorRRN, debtorAddr, visitorName, visitorRRN, visitorPhone, caseNum, courtName });
@@ -1813,27 +1814,28 @@ document.addEventListener('click', function(e) {
 });
 
 async function renderAdminTable() {
-  const apps     = await getApplications();
-  const search   = (document.getElementById('adminSearch')?.value || '').toLowerCase();
-  const sortDir  = document.getElementById('adminSort')?.value || 'desc';
-  const today    = new Date().toDateString();
+  const tbody = document.getElementById('adminTableBody');
+  const empty = document.getElementById('adminEmpty');
+  tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:#718096;">⏳ 데이터 불러오는 중...</td></tr>';
+
+  const apps      = await getApplications();
+  const search    = (document.getElementById('adminSearch')?.value || '').toLowerCase();
+  const sortDir   = document.getElementById('adminSort')?.value || 'desc';
+  const today     = new Date().toDateString();
   const thisMonth = new Date().toISOString().slice(0,7);
 
   // 통계
   document.getElementById('statTotal').textContent  = apps.length;
   document.getElementById('statToday').textContent  = apps.filter(a => new Date(a.createdAt).toDateString() === today).length;
-  document.getElementById('statMonth').textContent  = apps.filter(a => a.createdAt.startsWith(thisMonth)).length;
+  document.getElementById('statMonth').textContent  = apps.filter(a => (a.createdAt||'').startsWith(thisMonth)).length;
 
   // 필터 + 정렬
   let filtered = apps.filter(a =>
-    a.debtorName.toLowerCase().includes(search) ||
-    (a.caseNum || '').toLowerCase().includes(search) ||
-    (a.visitorName || '').toLowerCase().includes(search)
+    (a.debtorName||'').toLowerCase().includes(search) ||
+    (a.caseNum   ||'').toLowerCase().includes(search) ||
+    (a.visitorName||'').toLowerCase().includes(search)
   );
-  filtered = filtered.sort((a,b) => sortDir === 'desc' ? b.id - a.id : a.id - b.id);
-
-  const tbody = document.getElementById('adminTableBody');
-  const empty = document.getElementById('adminEmpty');
+  filtered = filtered.sort((a,b) => sortDir === 'desc' ? b.rowIndex - a.rowIndex : a.rowIndex - b.rowIndex);
 
   if (filtered.length === 0) {
     tbody.innerHTML = '';
@@ -1842,35 +1844,54 @@ async function renderAdminTable() {
   }
   empty.style.display = 'none';
 
-  const isNew = (iso) => (Date.now() - new Date(iso).getTime()) < 24 * 60 * 60 * 1000;
-
   tbody.innerHTML = filtered.map((a, i) => {
-    const dt = new Date(a.createdAt);
-    const dateStr = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
-    const newBadge = isNew(a.createdAt) ? '<span class="badge-new">NEW</span>' : '';
     return `<tr>
       <td style="text-align:center;color:#718096;white-space:nowrap;">${filtered.length - i}</td>
-      <td style="white-space:nowrap;">${dateStr} ${newBadge}</td>
-      <td style="white-space:nowrap;"><strong>${a.debtorName}</strong></td>
-      <td style="white-space:nowrap;">${a.debtorRRN || '-'}</td>
-      <td style="max-width:240px;">${a.debtorAddr || '-'}</td>
+      <td style="white-space:nowrap;font-size:0.78rem;">${a.createdAt || '-'}</td>
+      <td style="white-space:nowrap;"><strong>${a.debtorName || '-'}</strong></td>
+      <td style="white-space:nowrap;font-size:0.78rem;">${a.debtorRRN || '-'}</td>
+      <td style="font-size:0.78rem;max-width:220px;">${a.debtorAddr || '-'}</td>
       <td style="white-space:nowrap;">${a.visitorName || '-'}</td>
-      <td style="white-space:nowrap;">${a.caseNum || '-'}</td>
-      <td style="white-space:nowrap;">${(a.courtName||'').replace('지방법원','').replace('지원','지원')}</td>
+      <td style="white-space:nowrap;font-size:0.78rem;">${a.caseNum || '-'}</td>
+      <td style="white-space:nowrap;font-size:0.78rem;">${(a.courtName||'').replace('지방법원','').replace('지원','지원')}</td>
       <td style="text-align:center;white-space:nowrap;">
-        <button onclick="deleteRecord(${a.id})"
+        <button onclick="deleteRecord(${a.rowIndex})"
           style="background:none;border:none;color:#e53e3e;cursor:pointer;font-size:1rem;">🗑</button>
       </td>
     </tr>`;
   }).join('');
 }
 
-async function deleteRecord(id) {
-  showToast('삭제는 Google Sheets에서 직접 해주세요.');
+async function deleteRecord(rowIndex) {
+  if (!confirm('이 기록을 삭제하시겠습니까?')) return;
+  try {
+    await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', rowIndex }),
+    });
+    showToast('삭제 요청을 보냈습니다. 잠시 후 새로고침하세요.');
+    setTimeout(() => renderAdminTable(), 1500);
+  } catch(e) {
+    showToast('삭제 중 오류가 발생했습니다.');
+  }
 }
 
 async function clearAllData() {
-  showToast('전체 삭제는 Google Sheets에서 직접 해주세요.');
+  if (!confirm('모든 신청 이력을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) return;
+  try {
+    await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'clearAll' }),
+    });
+    showToast('전체 삭제 요청을 보냈습니다. 잠시 후 새로고침하세요.');
+    setTimeout(() => renderAdminTable(), 1500);
+  } catch(e) {
+    showToast('삭제 중 오류가 발생했습니다.');
+  }
 }
 
 async function exportCSV() {
@@ -1879,14 +1900,13 @@ async function exportCSV() {
 
   const header = ['No.','신청일시','채무자 성명','주민등록번호','주소','방문자 성명','방문자 주민번호','방문자 연락처','사건번호','법원명'];
   const rows = apps.map((a, i) => [
-    i+1,
-    new Date(a.createdAt).toLocaleString('ko-KR'),
+    i+1, a.createdAt,
     a.debtorName, a.debtorRRN, a.debtorAddr,
     a.visitorName, a.visitorRRN, a.visitorPhone,
     a.caseNum, a.courtName
   ]);
 
-  const th = header.map(h => `<th style="background:#1e3a5f;color:white;padding:6px 10px;border:1px solid #999;white-space:nowrap;">${h}</th>`).join('');
+  const th  = header.map(h => `<th style="background:#1e3a5f;color:white;padding:6px 10px;border:1px solid #999;white-space:nowrap;">${h}</th>`).join('');
   const trs = rows.map(r =>
     '<tr>' + r.map(v => `<td style="padding:5px 10px;border:1px solid #ccc;">${v||''}</td>`).join('') + '</tr>'
   ).join('');
@@ -1961,15 +1981,15 @@ async function exportCSV() {
       <table class="admin-table">
         <thead>
           <tr>
-            <th style="white-space:nowrap;">No.</th>
-            <th style="white-space:nowrap;">신청일시</th>
-            <th style="white-space:nowrap;">채무자</th>
-            <th style="white-space:nowrap;">주민번호</th>
-            <th style="min-width:180px;">주소</th>
-            <th style="white-space:nowrap;">방문자</th>
-            <th style="white-space:nowrap;">사건번호</th>
-            <th style="white-space:nowrap;">법원</th>
-            <th style="white-space:nowrap;">삭제</th>
+            <th style="width:44px;">No.</th>
+            <th style="width:90px;">신청일시</th>
+            <th style="width:80px;">채무자</th>
+            <th style="width:105px;">주민번호</th>
+            <th>주소</th>
+            <th style="width:75px;">방문자</th>
+            <th style="width:105px;">사건번호</th>
+            <th style="width:80px;">법원</th>
+            <th style="width:44px;">삭제</th>
           </tr>
         </thead>
         <tbody id="adminTableBody"></tbody>
