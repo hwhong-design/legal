@@ -1724,34 +1724,63 @@ async function sha256(str) {
 }
 
 // ── Google Sheets Apps Script 연동 ──
-// ★ 아래 URL을 본인의 Apps Script 배포 URL로 교체하세요 ★
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwgjmScapGxKKJmurN7OHXprBuB5OloRObMyQFc8NN_aGZlHteZW-PKN3q5Zqnccg6k/exec';
 const SESSION_KEY = 'wishket_admin_session';
 
-// ── Google Sheets에 데이터 저장 (POST) ──
-async function saveApplication(data) {
-  const payload = {
-    action:       'save',
-    createdAt:    new Date().toLocaleString('ko-KR'),
-    debtorName:   data.debtorName   || '',
-    debtorRRN:    data.debtorRRN    || '',
-    debtorAddr:   data.debtorAddr   || '',
-    visitorName:  data.visitorName  || '',
-    visitorRRN:   data.visitorRRN   || '',
-    visitorPhone: data.visitorPhone || '',
-    caseNum:      data.caseNum      || '',
-    courtName:    data.courtName    || '',
-  };
-  try {
-    await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-  } catch (err) {
-    console.warn('Google Sheets 저장 실패:', err);
-  }
+// ── Google Sheets에 데이터 저장 (iframe + form 방식 → CORS 문제 없음) ──
+function saveApplication(data) {
+  return new Promise((resolve) => {
+    try {
+      // 숨겨진 iframe 생성 (응답 받는 용도)
+      const iframeId = 'gs_iframe_' + Date.now();
+      const iframe = document.createElement('iframe');
+      iframe.name = iframeId;
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
+
+      // 숨겨진 폼 생성
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = APPS_SCRIPT_URL;
+      form.target = iframeId;
+      form.style.display = 'none';
+
+      // 전송할 데이터를 JSON 문자열로 하나의 필드에 담기
+      const payload = {
+        action:       'save',
+        createdAt:    new Date().toLocaleString('ko-KR'),
+        debtorName:   data.debtorName   || '',
+        debtorRRN:    data.debtorRRN    || '',
+        debtorAddr:   data.debtorAddr   || '',
+        visitorName:  data.visitorName  || '',
+        visitorRRN:   data.visitorRRN   || '',
+        visitorPhone: data.visitorPhone || '',
+        caseNum:      data.caseNum      || '',
+        courtName:    data.courtName    || '',
+      };
+
+      const input = document.createElement('input');
+      input.type  = 'hidden';
+      input.name  = 'payload';
+      input.value = JSON.stringify(payload);
+      form.appendChild(input);
+      document.body.appendChild(form);
+
+      // 전송
+      form.submit();
+
+      // 3초 후 정리 (응답 기다리지 않음)
+      setTimeout(() => {
+        try { document.body.removeChild(form); } catch(e) {}
+        try { document.body.removeChild(iframe); } catch(e) {}
+        resolve();
+      }, 3000);
+
+    } catch(err) {
+      console.warn('저장 실패:', err);
+      resolve();
+    }
+  });
 }
 
 // ── Google Sheets에서 데이터 불러오기 (GET) ──
